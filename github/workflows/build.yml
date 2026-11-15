@@ -1,0 +1,232 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create project files
+        run: |
+          mkdir -p app/src/main/assets app/src/main/java/com/example/studytracker
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "StudyTracker"
+          include(":app")
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          EOF
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.example.studytracker"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.example.studytracker"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          dependencies {
+              implementation("androidx.webkit:webkit:1.11.0")
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:label="دراستي"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/example/studytracker/MainActivity.kt <<'EOF'
+          package com.example.studytracker
+
+          import android.annotation.SuppressLint
+          import android.app.Activity
+          import android.content.ContentValues
+          import android.content.Context
+          import android.os.Bundle
+          import android.os.Environment
+          import android.provider.MediaStore
+          import android.webkit.JavascriptInterface
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebResourceResponse
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import androidx.webkit.WebViewAssetLoader
+
+          class Bridge(private val ctx: Context) {
+              @JavascriptInterface
+              fun saveCsv(name: String, text: String): Boolean {
+                  return try {
+                      val v = ContentValues().apply {
+                          put(MediaStore.Downloads.DISPLAY_NAME, name)
+                          put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+                          put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                      }
+                      val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v) ?: return false
+                      ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                      true
+                  } catch (e: Exception) {
+                      false
+                  }
+              }
+          }
+
+          class MainActivity : Activity() {
+              @SuppressLint("SetJavaScriptEnabled")
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val loader = WebViewAssetLoader.Builder()
+                      .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+                      .build()
+                  val web = WebView(this)
+                  web.settings.javaScriptEnabled = true
+                  web.settings.domStorageEnabled = true
+                  web.addJavascriptInterface(Bridge(this), "Android")
+                  web.webViewClient = object : WebViewClient() {
+                      override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                          loader.shouldInterceptRequest(request.url)
+                  }
+                  setContentView(web)
+                  web.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+              }
+          }
+          EOF
+          cat > app/src/main/assets/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="ar" dir="rtl">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+          <title>دراستي</title>
+          <style>
+          :root{--bg:#f6f7fb;--card:#fff;--tx:#1b1f2a;--mu:#6b7280;--ac:#4f46e5;--ok:#16a34a;--wa:#f59e0b;--bd:#e5e7eb;--tr:#e5e7eb;
+          box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+          @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12141c;--card:#1c1f2b;--tx:#eef0f6;--mu:#9aa1b2;--ac:#818cf8;--ok:#4ade80;--wa:#fbbf24;--bd:#2a2e3d;--tr:#2a2e3d;color-scheme:dark}}
+          :root[data-theme="dark"]{--bg:#12141c;--card:#1c1f2b;--tx:#eef0f6;--mu:#9aa1b2;--ac:#818cf8;--ok:#4ade80;--wa:#fbbf24;--bd:#2a2e3d;--tr:#2a2e3d;color-scheme:dark}
+          html{scroll-padding-top:env(safe-area-inset-top,0px)}
+          body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;padding:16px;max-width:520px;margin-inline:auto}
+          h1{font-size:20px;margin:4px 0}.sub{color:var(--mu);font-size:13px;margin-bottom:14px}
+          .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:12px}
+          .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+          .name{font-weight:700;font-size:16px}.t{font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;margin:6px 0}
+          .bar{height:8px;background:var(--tr);border-radius:8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+          .bar.done i{background:var(--ok)}
+          button{border:0;border-radius:12px;padding:10px 18px;font-size:15px;font-weight:700;background:var(--ac);color:#fff}
+          button.stop{background:#dc2626}
+          .mu{color:var(--mu);font-size:13px}
+          .grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:10px}
+          @media (min-width:700px){body{max-width:780px}#skills{display:grid;grid-template-columns:1fr 1fr;column-gap:12px}.grid{grid-template-columns:repeat(10,minmax(0,1fr))}.stats{grid-template-columns:repeat(3,1fr)}.d{font-size:12px;border-radius:8px}}
+          .d{aspect-ratio:1;border-radius:10px;background:var(--tr);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;color:var(--mu)}
+          .d.f{background:var(--ok);color:#fff}.d.x{background:#dc2626;color:#fff}.d.t{outline:2px dashed var(--ac);outline-offset:1px;color:var(--tx)}
+          button.nv{padding:6px 12px;font-size:13px}button:disabled{opacity:.4}
+          .d.u{opacity:.3}
+          #det{margin-top:10px;font-size:13px;color:var(--tx)}
+          .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+          .stats div{background:var(--bg);border-radius:12px;padding:10px;font-size:13px}.stats b{display:block;font-size:18px;margin-top:2px}
+          </style>
+          </head>
+          <body>
+          <h1>📚 دراستي</h1>
+          <div class="sub" id="date"></div>
+          <div id="skills"></div>
+          <div class="card">
+          <div class="row" id="mt"></div>
+          <div class="stats" id="stats"></div>
+          <div class="grid" id="grid"></div>
+          <div id="det" class="mu">اضغط على أي مربع لتشوف تفاصيل اليوم</div>
+          <div class="mu" style="margin-top:8px">🟩 أنجزت كل المهارات &nbsp; 🟥 فاتك اليوم &nbsp; ⬜ اليوم الحالي</div>
+          </div>
+          <div class="card"><div class="name">📤 تصدير البيانات</div><div class="mu" style="margin:6px 0 10px">كل بياناتك من اليوم الأول بملف CSV (بيفتح بإكسل).</div><button onclick="expo()">تصدير CSV</button><div id="msg" class="mu" style="margin-top:8px"></div></div>
+          <script>
+          var SK=[{k:'L',n:'الاستماع',m:110,e:'🎧'},{k:'W',n:'الكتابة',m:100,e:'✍️'},{k:'R',n:'القراءة',m:80,e:'📖'},{k:'S',n:'المحادثة',m:70,e:'🗣️'}];
+          var S={log:{},run:null};
+          try{var r=localStorage.getItem('study_v1');if(r)S=JSON.parse(r)}catch(e){}
+          function save(){try{localStorage.setItem('study_v1',JSON.stringify(S))}catch(e){}}
+          if(!S.start){S.start=dk(new Date());save()}
+          function det(k){document.getElementById('det').textContent=k+' — '+SK.map(function(a){return a.e+' '+Math.floor(live(a.k,k)/60)+'/'+a.m}).join(' · ')}
+          function dk(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+          function add(day,k,sec){S.log[day]=S.log[day]||{};S.log[day][k]=(S.log[day][k]||0)+sec}
+          function live(k,day){var v=(S.log[day]&&S.log[day][k])||0;if(S.run&&S.run.k===k&&dk(new Date(S.run.t))===day)v+=(Date.now()-S.run.t)/1000;return v}
+          function stop(){if(!S.run)return;add(dk(new Date(S.run.t)),S.run.k,Math.floor((Date.now()-S.run.t)/1000));S.run=null;save()}
+          function toggle(k){var was=S.run&&S.run.k===k;stop();if(!was){S.run={k:k,t:Date.now()};save()}render()}
+          function f(s){s=Math.floor(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),c=s%60;return h+':'+String(m).padStart(2,'0')+':'+String(c).padStart(2,'0')}
+          var vm=null;
+          function msg(t){document.getElementById('msg').textContent=t}
+          async function expo(){
+          var dl=null;try{dl=await claude.use('downloads')}catch(e){}
+          var td=dk(new Date()),sd=new Date(S.start+'T00:00:00'),rows=['day,date,month,listening_min,writing_min,reading_min,speaking_min,total_min,completed'],i=0;
+          for(var x=new Date(sd);dk(x)<=td;x.setDate(x.getDate()+1),i++){var k=dk(x),t=0,c=0,m=SK.map(function(s){var v=live(s.k,k);t+=Math.round(v/60);if(v>=s.m*60)c++;return Math.round(v/60)});rows.push([i+1,k,Math.floor(i/30)+1].concat(m,[t,c===4?'yes':'no']).join(','))}
+          var csv='\ufeff'+rows.join('\n');
+          if(window.Android){try{var ok=Android.saveCsv('study-data.csv',csv);msg(ok?'تم ✅ الملف بمجلد التنزيلات (Downloads)':'ما قدرت أصدّر.')}catch(e){msg('ما قدرت أصدّر.')}return}
+          if(dl){try{await dl.save({filename:'study-data.csv',data:csv});msg('تم ✅')}catch(e){msg(e&&e.code==='declined'?'تم الإلغاء.':'ما قدرت أصدّر، جرب مرة تانية.')}return}
+          try{var u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=u;a.download='study-data.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},1000);msg('تم ✅')}catch(e){msg('ما قدرت أصدّر.')}
+          }
+          function nav(d){vm=Math.max(0,vm+d);render()}
+          function render(){
+          var now=new Date(),td=dk(now);
+          document.getElementById('date').textContent=now.toLocaleDateString('ar',{weekday:'long',day:'numeric',month:'long'});
+          document.getElementById('skills').innerHTML=SK.map(function(s){
+          var v=live(s.k,td),p=Math.min(100,v/(s.m*60)*100),done=v>=s.m*60,run=S.run&&S.run.k===s.k;
+          return '<div class="card"><div class="row"><div class="name">'+s.e+' '+s.n+(done?' ✅':'')+'</div><button class="'+(run?'stop':'')+'" onclick="toggle(\''+s.k+'\')">'+(run?'إيقاف':'ابدأ')+'</button></div><div class="t">'+f(v)+'</div><div class="bar '+(done?'done':'')+'"><i style="width:'+p+'%"></i></div><div class="mu" style="margin-top:6px">الهدف: '+s.m+' دقيقة</div></div>'}).join('');
+          var sd=new Date(S.start+'T00:00:00'),cur=Math.floor(Math.round((new Date(td+'T00:00:00')-sd)/864e5)/30);
+          if(vm===null||vm>cur)vm=cur;
+          var tot=0,per={L:0,W:0,R:0,S:0},full=0,g='',el=0;
+          for(var j=0;j<30;j++){var x=new Date(sd);x.setDate(x.getDate()+vm*30+j);var kk=dk(x),fut=kk>td,cc=0;
+          SK.forEach(function(s){var v=live(s.k,kk);tot+=v;per[s.k]+=v;if(v>=s.m*60)cc++});
+          if(!fut)el++;if(cc===4)full++;
+          g+='<div class="d '+(fut?'u':cc===4?'f':kk===td?'t':'x')+'"'+(fut?'':' onclick="det(\''+kk+'\')"')+'>'+(vm*30+j+1)+'</div>'}
+          document.getElementById('grid').innerHTML=g;
+          document.getElementById('mt').innerHTML='<button class="nv" onclick="nav(-1)" '+(vm<=0?'disabled':'')+'>السابق</button><div class="name">الشهر '+(vm+1)+' (30 يوم)</div><button class="nv" onclick="nav(1)" '+(vm>=cur?'disabled':'')+'>التالي</button>';
+          document.getElementById('stats').innerHTML='<div>ساعات هذا الشهر<b>'+(tot/3600).toFixed(1)+' س</b></div><div>أيام مكتملة<b><bdi dir="ltr">'+full+' / '+el+'</bdi></b></div>'+
+          SK.map(function(s){return '<div>'+s.e+' '+s.n+'<b>'+(per[s.k]/3600).toFixed(1)+' س</b></div>'}).join('');
+          }
+          render();setInterval(render,1000);
+          document.addEventListener('visibilitychange',render);
+          </script>
+          </body>
+          </html>
+          EOF
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: study-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          
